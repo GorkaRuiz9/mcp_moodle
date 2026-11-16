@@ -1,0 +1,39 @@
+{
+  "name": "moodle-mcp",
+  "version": "0.1.0",
+  "description": "Read-only MCP server for Moodle (student role). Defaults to ALUD, the Moodle of the University of Deusto.",
+  "type": "module",
+  "bin": {
+    "moodle-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "node dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "moodle",
+    "alud",
+    "deusto"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "unpdf": "^1.7.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.12"
+  }
+}

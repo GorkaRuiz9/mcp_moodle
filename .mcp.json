@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "moodle": {
+      "command": "node",
+      "args": ["dist/cli.js"]
+    }
+  }
+}
