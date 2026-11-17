@@ -4,7 +4,7 @@ import { formatBytes, formatDate, formatDateRelative, htmlToText, normalizeForSe
 /** Courses and their contents change rarely; grades, deadlines and forums are always fetched fresh. */
 export const STATIC_TTL_MS = 5 * 60 * 1000;
 
-const nowSeconds = () => Math.floor(Date.now() / 1000);
+export const nowSeconds = () => Math.floor(Date.now() / 1000);
 
 export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
@@ -21,7 +21,7 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) =>
 
 // ---------------------------------------------------------------- courses
 
-interface Course {
+export interface Course {
   id: number;
   fullname: string;
   shortname: string;
@@ -32,16 +32,16 @@ interface Course {
   hidden?: boolean;
 }
 
-async function getCourses(client: MoodleClient): Promise<Course[]> {
+export async function getCourses(client: MoodleClient): Promise<Course[]> {
   const info = await client.siteInfo();
   const courses = await client.call<Course[]>("core_enrol_get_users_courses", { userid: info.userid }, STATIC_TTL_MS);
   return courses.map((course) => ({ ...course, fullname: oneLine(course.fullname) }));
 }
 
-const isCurrent = (course: Course, now: number) => !course.enddate || course.enddate > now;
-const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+export const isCurrent = (course: Course, now: number) => !course.enddate || course.enddate > now;
+export const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
-async function getScopeCourses(client: MoodleClient, courseId?: number): Promise<Course[]> {
+export async function getScopeCourses(client: MoodleClient, courseId?: number): Promise<Course[]> {
   const courses = await getCourses(client);
   if (courseId !== undefined) {
     const match = courses.find((c) => c.id === courseId);
@@ -81,7 +81,7 @@ export async function listCourses(client: MoodleClient, args: { filter?: "curren
 
 // --------------------------------------------------------------- contents
 
-interface ContentFile {
+export interface ContentFile {
   type: string;
   filename?: string;
   filesize?: number;
@@ -90,7 +90,7 @@ interface ContentFile {
   timemodified?: number;
 }
 
-interface CourseModule {
+export interface CourseModule {
   id: number;
   name: string;
   modname: string;
@@ -102,7 +102,7 @@ interface CourseModule {
   contents?: ContentFile[];
 }
 
-interface Section {
+export interface Section {
   id: number;
   name: string;
   section?: number;
@@ -111,11 +111,11 @@ interface Section {
   modules: CourseModule[];
 }
 
-function getContents(client: MoodleClient, courseId: number): Promise<Section[]> {
+export function getContents(client: MoodleClient, courseId: number): Promise<Section[]> {
   return client.call<Section[]>("core_course_get_contents", { courseid: courseId }, STATIC_TTL_MS);
 }
 
-const cleanFileUrl = (url: string) => url.replace(/[?&]forcedownload=1$/, "");
+export const cleanFileUrl = (url: string) => url.replace(/[?&]forcedownload=1$/, "");
 const MAX_FILES_PER_MODULE = 30;
 
 function formatModule(mod: CourseModule): string {
@@ -341,7 +341,7 @@ export async function getGrades(client: MoodleClient, args: { course_id?: number
 
 // ----------------------------------------------------------------- forums
 
-interface Forum {
+export interface Forum {
   id: number;
   course: number;
   name: string;
@@ -366,7 +366,7 @@ interface Discussion {
 }
 
 /** Tries the current function and falls back to its pre-3.7 predecessor. */
-async function withFallback<T>(primary: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
+export async function withFallback<T>(primary: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
   try {
     return await primary();
   } catch (err) {

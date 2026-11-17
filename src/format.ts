@@ -51,9 +51,10 @@ function decodeEntities(text: string): string {
 }
 
 /** Converts Moodle's HTML fragments into compact plain text. */
-export function htmlToText(html: string | null | undefined): string {
-  if (!html) return "";
-  let text = html
+export function htmlToText(html: string | number | null | undefined): string {
+  if (html === null || html === undefined || html === "") return "";
+  // Moodle sends some "text" fields (grades, marks) as bare numbers.
+  let text = String(html)
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, "")
     // Keep link targets: <a href="u">t</a> -> t (u)
@@ -63,7 +64,8 @@ export function htmlToText(html: string | null | undefined): string {
       return label && label !== href ? `${label} (${href})` : href;
     })
     .replace(/<img\b[^>]*?alt\s*=\s*["']([^"']+)["'][^>]*>/gi, "[image: $1]")
-    .replace(/<li\b[^>]*>/gi, "\n- ")
+    // Swallow the line breaks HTML puts between items, or the list comes out double-spaced.
+    .replace(/\s*<li\b[^>]*>\s*/gi, "\n- ")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|h[1-6]|tr|ul|ol|table|blockquote|section)>/gi, "\n")
     .replace(/<\/(td|th)>/gi, " | ")
@@ -130,4 +132,79 @@ export function normalizeForSearch(text: string): string {
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase();
+}
+
+/**
+ * Parses a date typed by a person or a model: "2026-11-20", "2026-11-20 09:30"
+ * or a full ISO 8601 string. Without a time zone it is local time. Returns
+ * Unix seconds, or undefined when the text is not a date.
+ */
+export function parseDateInput(text: string): number | undefined {
+  const match = /^\s*(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?\s*(Z|[+-]\d{2}:?\d{2})?\s*$/i.exec(text);
+  if (!match) return undefined;
+  const [, year, month, day, hour = "0", minute = "0", second = "0", zone] = match;
+  const parts = [Number(year), Number(month), Number(day), Number(hour), Number(minute), Number(second)] as const;
+  if (parts[1] < 1 || parts[1] > 12 || parts[2] < 1 || parts[2] > 31 || parts[3] > 23 || parts[4] > 59 || parts[5] > 59) return undefined;
+  let ms: number;
+  if (zone) {
+    ms = Date.parse(`${year}-${pad(parts[1])}-${pad(parts[2])}T${pad(parts[3])}:${pad(parts[4])}:${pad(parts[5])}${zone.toUpperCase()}`);
+  } else {
+    const local = new Date(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5]);
+    // new Date() rolls 31 February over into March; that is a typo, not a date.
+    if (local.getMonth() !== parts[1] - 1 || local.getDate() !== parts[2]) return undefined;
+    ms = local.getTime();
+  }
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined;
+}
+
+export function formatDuration(seconds: number): string {
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  if (seconds < 86400) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.round((seconds % 3600) / 60);
+    return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
+  }
+  const days = seconds / 86400;
+  return `${Number.isInteger(days) ? days : days.toFixed(1)} d`;
+}
+
+const attribute = (tag: string, name: string): string | undefined => {
+  const match = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i").exec(tag);
+  return match ? decodeEntities(match[1] ?? match[2] ?? "") : undefined;
+};
+
+/**
+ * Plain text of a quiz question as Moodle renders it in a review page. On
+ * top of htmlToText it keeps what the student answered: ticked radio buttons
+ * and checkboxes, typed text, chosen menu options, and the right/wrong icons.
+ */
+export function questionHtmlToText(html: string | null | undefined): string {
+  if (!html) return "";
+  let text = html
+    .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, "")
+    // Screen-reader-only labels ("Question text", "Flag question") are noise here.
+    .replace(/<(span|div|h[1-6]|label|legend)\b[^>]*class\s*=\s*["'][^"']*\b(?:accesshide|sr-only|visually-hidden)\b[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<select\b[^>]*>([\s\S]*?)<\/select>/gi, (_m, options: string) => {
+      const chosen = /<option\b[^>]*\bselected\b[^>]*>([\s\S]*?)<\/option>/i.exec(options);
+      const label = chosen ? chosen[1]!.replace(/<[^>]+>/g, "").trim() : "";
+      return ` [chosen: ${label || "nothing"}] `;
+    })
+    .replace(/<input\b[^>]*>/gi, (tag) => {
+      const type = (attribute(tag, "type") ?? "text").toLowerCase();
+      const checked = /\bchecked\b/i.test(tag);
+      if (type === "radio") return checked ? "(x) " : "( ) ";
+      if (type === "checkbox") return checked ? "[x] " : "[ ] ";
+      if (type === "text" || type === "number") return ` [typed: ${attribute(tag, "value") ?? ""}] `;
+      return "";
+    })
+    .replace(/<textarea\b[^>]*>([\s\S]*?)<\/textarea>/gi, (_m, body: string) => `\n[typed: ${body.trim()}]\n`)
+    // Moodle marks answers with icons whose only text is the title.
+    .replace(/<i\b[^>]*>\s*<\/i>/gi, (tag) => {
+      const label = attribute(tag, "title") ?? attribute(tag, "aria-label");
+      return label ? ` [${label}] ` : "";
+    });
+  // Everything before the question body is the number/state/mark box, which callers print themselves.
+  const body = /<div\b[^>]*class\s*=\s*["'][^"']*\bcontent\b[^"']*["'][^>]*>/i.exec(text);
+  if (body) text = text.slice(body.index);
+  return htmlToText(text);
 }

@@ -151,6 +151,54 @@ export class MoodleClient {
     return data as T;
   }
 
+  /** Forgets every memoized answer. Call it after changing something in Moodle. */
+  clearCache(): void {
+    this.cache.clear();
+  }
+
+  /**
+   * Uploads one file to the user's draft area and returns the draft item id
+   * that holds it. Pass the id of an earlier upload to add to the same draft;
+   * 0 starts a new one. Nothing is visible to anyone until a web service
+   * function saves the draft somewhere.
+   */
+  async upload(file: { name: string; data: Uint8Array; path?: string }, itemId = 0): Promise<number> {
+    if (!this.token) throw new NotLoggedInError();
+    const form = new FormData();
+    form.set("token", this.token);
+    form.set("filearea", "draft");
+    form.set("itemid", String(itemId));
+    form.set("filepath", file.path ?? "/");
+    form.set("file_1", new Blob([file.data as Uint8Array<ArrayBuffer>]), file.name);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.url}/webservice/upload.php`, {
+        method: "POST",
+        body: form,
+        redirect: "error",
+        signal: AbortSignal.timeout(Math.max(this.timeoutMs, 300_000)),
+      });
+    } catch (err) {
+      throw new MoodleError(`Could not upload ${file.name}: ${(err as Error).message}`, "network");
+    }
+    if (!response.ok) throw new MoodleError(`Upload of ${file.name} failed with HTTP ${response.status}.`, "http");
+    let data: unknown;
+    try {
+      data = JSON.parse(await response.text());
+    } catch {
+      throw new MoodleError(`${this.url} returned a non-JSON answer to the upload of ${file.name}.`, "badjson");
+    }
+    if (Array.isArray(data)) {
+      const first = data[0] as { itemid?: number; error?: string; errorcode?: string } | undefined;
+      if (first && typeof first.itemid === "number") return first.itemid;
+      // Per-file problems (too big, quota) come back inside the array.
+      throw new MoodleError(`Moodle refused ${file.name}: ${first?.error ?? first?.errorcode ?? "unknown reason"}`, first?.errorcode);
+    }
+    const error = (data ?? {}) as { error?: string; errorcode?: string };
+    if (error.errorcode && TOKEN_ERRORS.has(error.errorcode)) throw new NotLoggedInError(`Moodle rejected the token (${error.errorcode}).`);
+    throw new MoodleError(`Moodle refused ${file.name}: ${error.error ?? error.errorcode ?? "unknown reason"}`, error.errorcode);
+  }
+
   /** Who the token belongs to. Fetched once per process. */
   siteInfo(): Promise<SiteInfo> {
     if (!this.siteInfoPromise) {

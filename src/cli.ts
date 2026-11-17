@@ -3,9 +3,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { cacheDir, clearConfig, configPath, loadConfig, normalizeUrl } from "./config.js";
 import { login } from "./login.js";
 import { MoodleClient } from "./moodle.js";
+import { parseWriteGroups } from "./confirm.js";
 import { createServer, VERSION } from "./server.js";
 
-const HELP = `moodle-mcp ${VERSION} — read-only MCP server for Moodle
+const HELP = `moodle-mcp ${VERSION} — MCP server for Moodle (read-only by default)
 
 Usage:
   moodle-mcp                 Start the MCP server on stdio (what MCP clients run)
@@ -18,6 +19,10 @@ Usage:
 Environment:
   MOODLE_URL                 Moodle site URL (overrides the stored one)
   MOODLE_TOKEN               Web service token (overrides the stored one)
+  MOODLE_MCP_WRITE           Comma-separated groups of tools that may change things
+                             in Moodle. Unset: read-only. Groups: entregas, foros,
+                             calendario, seguimiento, notificaciones (or "todo").
+                             Every change still asks for confirmation.
 `;
 
 function option(args: string[], name: string): string | undefined {
@@ -34,11 +39,14 @@ async function main(): Promise<void> {
     case undefined:
     case "serve": {
       const config = await loadConfig();
+      // A typo here fails the start instead of silently leaving tools out.
+      const writeGroups = parseWriteGroups(process.env.MOODLE_MCP_WRITE);
       const client = new MoodleClient({ url: config.url, token: config.token });
-      const server = createServer(client, { cacheDir: cacheDir() });
+      const server = createServer(client, { cacheDir: cacheDir(), writeGroups });
       await server.connect(new StdioServerTransport());
       // stdout belongs to the protocol; anything for humans goes to stderr.
-      console.error(`moodle-mcp ${VERSION} serving ${config.url}${config.token ? "" : " (not logged in: run `moodle-mcp login`)"}`);
+      const mode = writeGroups.size ? `writing enabled for: ${[...writeGroups].join(", ")}` : "read-only";
+      console.error(`moodle-mcp ${VERSION} serving ${config.url} (${mode})${config.token ? "" : " (not logged in: run `moodle-mcp login`)"}`);
       return;
     }
     case "login": {

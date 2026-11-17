@@ -1,0 +1,27 @@
+# Throwaway Moodle for the end-to-end tests. Nothing here is persistent:
+# `./down.sh` removes the containers and their volumes.
+name: moodle-mcp-e2e
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: moodle
+      POSTGRES_PASSWORD: moodle
+      POSTGRES_DB: moodle
+    volumes:
+      - db:/var/lib/postgresql/data
+  moodle:
+    image: moodlehq/moodle-php-apache:8.3
+    depends_on:
+      - db
+    ports:
+      - "127.0.0.1:${MOODLE_E2E_PORT:-8099}:80"
+    volumes:
+      - html:/var/www/html
+      - data:/var/www/moodledata
+      # The whole folder, not the file: editors replace files, and a single-file mount would keep showing the old one.
+      - .:/opt/e2e:ro
+volumes:
+  db:
+  html:
+  data:

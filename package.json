@@ -1,7 +1,7 @@
 {
   "name": "moodle-mcp",
-  "version": "0.1.0",
-  "description": "Read-only MCP server for Moodle (student role). Defaults to ALUD, the Moodle of the University of Deusto.",
+  "version": "0.2.0",
+  "description": "MCP server for Moodle (student role), read-only by default. Defaults to ALUD, the Moodle of the University of Deusto.",
   "type": "module",
   "bin": {
     "moodle-mcp": "dist/cli.js"
@@ -14,7 +14,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "start": "node dist/cli.js"
+    "start": "node dist/cli.js",
+    "test:e2e": "npm run build && tests/e2e/up.sh && vitest run --config vitest.e2e.config.ts"
   },
   "engines": {
     "node": ">=20"
@@ -28,6 +29,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "marked": "^18.2.1",
     "unpdf": "^1.7.0",
     "zod": "^4.6.7"
   },

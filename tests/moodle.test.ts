@@ -92,3 +92,39 @@ describe("file URLs", () => {
     await expect(fake.client.download(`${SITE}/pluginfile.php/1/a.txt`, 2)).rejects.toThrow(/too large/);
   });
 });
+
+describe("upload", () => {
+  const uploader = (answer: unknown, status = 200) => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    const client = new MoodleClient({
+      url: "https://moodle.example",
+      token: "secret-token",
+      fetchImpl: async (url, init) => {
+        requests.push({ url, init });
+        return new Response(JSON.stringify(answer), { status });
+      },
+    });
+    return { client, requests };
+  };
+  const file = { name: "memoria.pdf", data: new TextEncoder().encode("hola") };
+
+  it("sends the file to the user's draft area and returns the draft id", async () => {
+    const { client, requests } = uploader([{ itemid: 4242, filename: "memoria.pdf" }]);
+    expect(await client.upload(file, 0)).toBe(4242);
+    expect(requests[0]!.url).toBe("https://moodle.example/webservice/upload.php");
+    const form = requests[0]!.init!.body as FormData;
+    expect(form.get("filearea")).toBe("draft");
+    expect(form.get("itemid")).toBe("0");
+    expect(form.get("token")).toBe("secret-token");
+    expect((form.get("file_1") as File).name).toBe("memoria.pdf");
+    // The token travels in the body; a redirect must not carry it elsewhere.
+    expect(requests[0]!.init!.redirect).toBe("error");
+  });
+
+  it("turns Moodle's refusals into errors", async () => {
+    await expect(uploader({ error: "El archivo es demasiado grande", errorcode: "maxbytes" }).client.upload(file)).rejects.toThrow(/refused memoria\.pdf: El archivo es demasiado grande/);
+    await expect(uploader([{ error: "Cuota superada", errorcode: "userquotalimit" }]).client.upload(file)).rejects.toThrow(/Cuota superada/);
+    await expect(uploader({ error: "Token no válido", errorcode: "invalidtoken" }).client.upload(file)).rejects.toThrow(/moodle-mcp login/);
+    await expect(uploader({}, 500).client.upload(file)).rejects.toThrow(/HTTP 500/);
+  });
+});

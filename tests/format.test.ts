@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, htmlToText, normalizeForSearch, relativeTime, summarize, truncate } from "../src/format.js";
+import { formatBytes, formatDuration, htmlToText, normalizeForSearch, parseDateInput, questionHtmlToText, relativeTime, summarize, truncate } from "../src/format.js";
 
 describe("htmlToText", () => {
   it("strips tags and decodes entities", () => {
@@ -51,5 +51,52 @@ describe("text helpers", () => {
     expect(formatBytes(512)).toBe("512 B");
     expect(formatBytes(1536)).toBe("1.5 KB");
     expect(formatBytes(0)).toBe("0 B");
+  });
+});
+
+describe("parseDateInput", () => {
+  const local = (year: number, month: number, day: number, hour = 0, minute = 0) => Math.floor(new Date(year, month, day, hour, minute).getTime() / 1000);
+
+  it("reads dates with and without a time, as local time", () => {
+    expect(parseDateInput("2026-11-20")).toBe(local(2026, 10, 20));
+    expect(parseDateInput("2026-11-20 09:30")).toBe(local(2026, 10, 20, 9, 30));
+    expect(parseDateInput(" 2026-11-20T09:30:00 ")).toBe(local(2026, 10, 20, 9, 30));
+  });
+
+  it("honours an explicit time zone", () => {
+    expect(parseDateInput("2026-11-20T09:30:00Z")).toBe(Date.UTC(2026, 10, 20, 9, 30) / 1000);
+    expect(parseDateInput("2026-11-20T09:30+02:00")).toBe(Date.UTC(2026, 10, 20, 7, 30) / 1000);
+  });
+
+  it("rejects what is not a date", () => {
+    for (const text of ["", "mañana", "20/11/2026", "2026-13-01", "2026-02-31", "2026-11-20 25:00", "1794956340"]) {
+      expect(parseDateInput(text)).toBeUndefined();
+    }
+  });
+});
+
+describe("formatDuration", () => {
+  it("uses the largest sensible unit", () => {
+    expect(formatDuration(1800)).toBe("30 min");
+    expect(formatDuration(7200)).toBe("2 h");
+    expect(formatDuration(5400)).toBe("1 h 30 min");
+    expect(formatDuration(2 * 86400)).toBe("2 d");
+  });
+});
+
+describe("questionHtmlToText", () => {
+  it("keeps the answers a student gave", () => {
+    const html =
+      '<div class="info">Pregunta 1 Puntúa 1,00</div><div class="content"><span class="accesshide">Texto de la pregunta</span><p>Elige:</p>' +
+      '<input type="checkbox" checked="checked" /> uno <i class="icon" title="Correcta"></i><br><input type="checkbox" /> dos<br>' +
+      '<select><option value="0">Elegir…</option><option selected="selected" value="2">rojo</option></select>' +
+      '<input type="hidden" name="q1:1_:sequencecheck" value="2" /><textarea>mi respuesta larga</textarea></div>';
+    const text = questionHtmlToText(html);
+    expect(text).toBe("Elige:\n[x] uno [Correcta]\n[ ] dos\n[chosen: rojo]\n[typed: mi respuesta larga]");
+  });
+
+  it("copes with numbers where Moodle should send text", () => {
+    expect(htmlToText(6.5)).toBe("6.5");
+    expect(htmlToText(0)).toBe("0");
   });
 });
